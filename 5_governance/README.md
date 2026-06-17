@@ -181,8 +181,16 @@ Compliance requires data to remain in a specific location
 ### GRANT / REVOKE Syntax
 
 ```sql
--- Grant catalog-level access (inherits to all schemas/tables within)
+-- USE CATALOG: pure traversal privilege — lets a principal "see into"
+-- the catalog. Grants NO data access by itself. SELECT/MODIFY are
+-- separate grants required at the schema or table level.
 GRANT USE CATALOG ON CATALOG workspace TO `data-engineers`;
+
+-- The complete chain required for analysts to query workspace.gold.revenue:
+-- ALL THREE are required — each is a separate gate, none implies the others
+GRANT USE CATALOG ON CATALOG workspace TO `analysts`;
+GRANT USE SCHEMA  ON SCHEMA  workspace.gold TO `analysts`;
+GRANT SELECT      ON SCHEMA  workspace.gold TO `analysts`;
 
 -- Grant schema-level access
 GRANT USE SCHEMA ON SCHEMA workspace.silver TO `analysts`;
@@ -200,17 +208,38 @@ REVOKE SELECT ON TABLE workspace.gold.revenue FROM `exec-team`;
 
 ### Permission Inheritance
 
-```
-Permissions granted at a higher level cascade down:
+Two different mechanisms are easy to conflate — gates vs. inheriting grants.
 
-GRANT USE CATALOG ON CATALOG workspace TO `team`
-  ──► team can see the catalog exists, but cannot query tables
-      without additional SCHEMA or TABLE grants
-
-GRANT SELECT ON SCHEMA workspace.silver TO `team`
-  ──► team can SELECT from ALL tables currently in workspace.silver
-      AND any tables added to that schema in the future
 ```
+GATES (USE CATALOG, USE SCHEMA):
+  Pure traversal/visibility privileges.
+  Grant NOTHING about data access on their own.
+  Required at EVERY level of the path to the object —
+  missing any one gate = PERMISSION_DENIED, regardless of
+  what's granted elsewhere.
+
+  GRANT USE CATALOG ON CATALOG workspace TO `team`
+    ──► team can see the catalog exists
+    ──► team STILL cannot query any table — USE CATALOG
+        does not grant SELECT, and does not imply USE SCHEMA
+
+INHERITING GRANTS (SELECT ON SCHEMA, SELECT ON CATALOG):
+  Granted at a higher level, automatically apply to objects
+  below — including objects created LATER.
+
+  GRANT SELECT ON SCHEMA workspace.silver TO `team`
+    ──► team can SELECT from ALL tables currently in
+        workspace.silver AND any tables added in the future
+    ──► but team STILL needs USE CATALOG + USE SCHEMA gates
+        satisfied to actually reach workspace.silver
+```
+
+**The practical rule:** gates (`USE CATALOG`, `USE SCHEMA`) must be
+granted at every level on the path regardless of where the data-access
+grant (`SELECT`/`MODIFY`) sits. The data-access grant is what
+"inherits downward" to future objects — the gates do not inherit
+anything, they're just prerequisites that happen to exist at multiple
+levels.
 
 **Exam trap:** `GRANT SELECT ON SCHEMA` is different from granting on each
 table individually — schema-level grants apply to future tables too.

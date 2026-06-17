@@ -209,14 +209,43 @@ json, csv, parquet, avro, orc, text, binaryFile
 # Schema hints — provide type hints while still inferring rest
 .option("cloudFiles.schemaHints", "id INT, amount DOUBLE")
 
-# Include file metadata columns
-.option("cloudFiles.includeExistingFiles", "true")  # process existing files too
+# includeExistingFiles — controls whether files that existed in the
+# source directory BEFORE the stream first started are processed.
+# Default: true. Set false to only process files arriving from
+# stream start onward (skip the existing backlog).
+.option("cloudFiles.includeExistingFiles", "true")
 
 # Max files per trigger — rate limiting
 .option("cloudFiles.maxFilesPerTrigger", "1000")
 
 # Path glob filter — only process matching files
 .option("pathGlobFilter", "*.json")
+```
+
+### File Metadata Column
+
+Every DataFrame read from files (not just Auto Loader) can access a
+built-in `_metadata` column containing per-row file provenance —
+useful for auditing which source file each row came from.
+
+```python
+from pyspark.sql.functions import col
+
+df = (spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "json")
+    .schema(my_schema)
+    .load("/mnt/landing/")
+    .select("*", "_metadata")   # add the metadata struct column
+)
+
+# _metadata fields include:
+#   _metadata.file_path
+#   _metadata.file_name
+#   _metadata.file_size
+#   _metadata.file_modification_time
+
+df.select(col("_metadata.file_path"), col("_metadata.file_name"))
 ```
 
 ### File Detection Modes
